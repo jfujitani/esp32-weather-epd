@@ -1,104 +1,77 @@
 ---
 name: sync-upstream
 description: >-
-  Syncs the fork branches (main, feature/wifi-manager, release/1.0.x, and release/1.0.x-no-wifi-mgr)
-  with the upstream repository (lmarzen/esp32-weather-epd). Use this skill whenever the user asks
-  to sync with upstream, update branches from upstream, or check for upstream updates with human-in-the-loop conflict resolution.
+  Syncs the fork with upstream (lmarzen/esp32-weather-epd). Updates main and feature branches,
+  then interactively asks the user which local branches to sync and what parent to merge from.
+  Includes human-in-the-loop conflict resolution and strictly limits pushes to public branches.
 ---
 
 # Sync Upstream Skill
 
-This skill synchronizes changes from the upstream project (`lmarzen/esp32-weather-epd`) into your local fork branches while keeping you in the loop whenever a merge conflict arises.
+This skill synchronizes changes from the upstream project (`lmarzen/esp32-weather-epd`) into your local repository.
 
-## Branch Hierarchy & Flow
+## Branch Categories
 
-```
-upstream/main (lmarzen/esp32-weather-epd)
-     │
-     ▼
-   main (clean mirror)
-     ├──► feature/wifi-manager (clean wifi feature for PR)
-     │         │
-     │         ▼
-     │    release/1.0.x (local configs + wifi feature)
-     │
-     └──► release/1.0.x-no-wifi-mgr (local configs only)
-```
+1. **Public Remote Branches (`main`, `feature/*`)**: Clean tracking and contribution branches intended to push to `origin`.
+2. **Local-Only Branches**: Private branches (e.g. customized configs, test branches) that are kept strictly local and **never pushed to remote**.
 
 ## Step-by-Step Procedure
 
 ### 1. Pre-flight Checks
-1. Ensure the working tree is clean:
+1. Check that working tree is clean:
    ```bash
    git status --porcelain
    ```
-   If dirty, ask the user to commit or stash changes before proceeding.
+2. Note the currently checked-out branch to restore it at the end.
+3. Ensure `upstream` remote exists (`https://github.com/lmarzen/esp32-weather-epd.git`) and `rerere.enabled` is `true`.
 
-2. Verify remotes:
-   ```bash
-   git remote -v
-   ```
-   Ensure `upstream` points to `https://github.com/lmarzen/esp32-weather-epd.git` and `rerere.enabled` is `true`.
-
-### 2. Fetch Upstream Changes
-Fetch the latest commits from upstream:
+### 2. Fetch Upstream
 ```bash
 git fetch upstream main
 ```
-Check if there are new commits to merge:
+Check if there are new commits:
 ```bash
 git log --oneline main..upstream/main
 ```
-If empty, notify the user that `main` is already up to date with `upstream/main`. Ask if they still want to propagate `main` through the rest of the branch cascade.
 
-### 3. Step A: Update `main`
-`main` is a clean tracking branch of upstream:
+### 3. Update `main`
 ```bash
 git checkout main
 git merge --ff-only upstream/main
 ```
-*(If `--ff-only` fails because local `main` has diverged, stop and ask the user how to reconcile).*
 
-### 4. Step B: Update `feature/wifi-manager`
-Merge `main` into `feature/wifi-manager`:
+### 4. Update Public Feature Branches
+For each public feature branch (e.g., `feature/wifi-manager`):
 ```bash
-git checkout feature/wifi-manager
-git merge main -m "merge upstream main into feature/wifi-manager"
+git checkout <feature-branch>
+git merge main -m "merge upstream main into <feature-branch>"
 ```
-**Conflict Handling**:
-- If conflicts occur, run `git status` and show conflicted files.
-- Inspect the conflicts and suggest a resolution to the user.
-- Ask for user confirmation before committing the resolution.
-- Complete the merge: `git commit`.
+- If conflicts arise: display conflicted files, propose a resolution, and wait for human confirmation before committing.
 
-### 5. Step C: Update `release/1.0.x`
-Merge `feature/wifi-manager` into `release/1.0.x`:
-```bash
-git checkout release/1.0.x
-git merge feature/wifi-manager -m "merge feature/wifi-manager into release/1.0.x"
-```
-**Conflict Handling**:
-- If conflicts occur (often in config/customization files like `include/config.h` or `src/config.cpp`), explain what upstream changed vs. what local customized configs exist.
-- Ask the user which settings to preserve.
-- Complete the merge after user confirmation.
-
-### 6. Step D: Update `release/1.0.x-no-wifi-mgr`
-Merge `main` into `release/1.0.x-no-wifi-mgr`:
-```bash
-git checkout release/1.0.x-no-wifi-mgr
-git merge main -m "merge upstream main into release/1.0.x-no-wifi-mgr"
-```
-**Conflict Handling**:
-- Same process as Step C for any configuration file conflicts.
-
-### 7. Step E: Push & Verification (Human Approval)
-Before pushing to `origin`:
-1. Check the summary of changes on each branch:
+### 5. Interactively Sync Local Branches
+1. List available local branches:
    ```bash
-   git status
-   git log --oneline origin/<branch>..<branch>
+   git branch --list
    ```
-2. Ask the user for confirmation before pushing to remote `origin`:
+2. Ask the user:
+   - Which local branches they want updated.
+   - For each selected branch, which source/parent branch to merge in (e.g., `main` or a specific feature branch).
+3. For each selected local branch:
    ```bash
-   git push origin main feature/wifi-manager release/1.0.x release/1.0.x-no-wifi-mgr
+   git checkout <local-branch>
+   git merge <chosen-parent-branch>
    ```
+- **Conflict Handling**: Present the diffs, explain the conflicting lines, and ask the user how to resolve them before committing.
+
+### 6. Push Public Branches (Human Approval)
+1. Display outgoing commits for public branches only (`main`, `feature/*`).
+2. Ask the user for confirmation before pushing.
+3. Push **only** approved public branches:
+   ```bash
+   git push origin main <approved-feature-branches...>
+   ```
+> [!CAUTION]
+> **Never push local branches to `origin`.**
+
+### 7. Restore Working Branch
+Return to the branch originally checked out in Step 1.
